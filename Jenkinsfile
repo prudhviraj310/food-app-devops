@@ -2,22 +2,39 @@ pipeline {
     agent any
 
     stages {
-        stage('Clone') {
+        stage('Checkout') {
             steps {
-                echo "Add your repo URL here"
+                checkout scm
+            }
+        }
+
+        stage('Security Scan (Trivy)') {
+            steps {
+                // This uses the Trivy installed on the host via the docker socket
+                sh 'docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest fs .'
             }
         }
 
         stage('Build') {
             steps {
-                sh 'docker-compose build'
+                // Use "docker compose" (space) instead of "docker-compose" (hyphen)
+                sh 'docker compose build'
             }
         }
 
-        stage('Run') {
+        stage('Deploy') {
             steps {
-                sh 'docker-compose up -d'
+                sh 'docker compose up -d'
             }
+        }
+    }
+    
+    post {
+        success {
+            echo "Deployment successful!"
+        }
+        failure {
+            echo "Build failed. Check the logs."
         }
     }
 }
