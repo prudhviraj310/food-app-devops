@@ -6,7 +6,7 @@ services:
     container_name: food-app-db
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: Prudhviraj@310
       MYSQL_DATABASE: fooddb
     ports:
       - "3306:3306"
@@ -29,7 +29,7 @@ services:
     environment:
       DB_HOST: mysql
       DB_USER: root
-      DB_PASSWORD: root
+      DB_PASSWORD: Prudhviraj@310
       DB_NAME: fooddb
 
   frontend:
