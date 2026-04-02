@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        // Using your Private IP for internal EC2 communication
+        // Internal EC2 Private IP for SonarQube
         SONAR_URL = "http://10.1.1.55:9000" 
         RECEIVER_EMAIL = "prudhviraj7675@gmail.com"
     }
@@ -10,14 +10,16 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
+                // Pulls your latest code from GitHub
                 checkout scm
             }
         }
 
         stage('Security Scan (Trivy)') {
             steps {
-                echo "Scanning for vulnerabilities..."
-                sh 'docker run --rm -v /var/run/docker.sock:/var/run/docker.sock ghcr.io/aquasecurity/trivy:0.69.3 fs .'
+                echo "Scanning for vulnerabilities in the source code..."
+                // Mounting $(pwd) ensures Trivy sees the actual files in the workspace
+                sh 'docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$(pwd):/root/" ghcr.io/aquasecurity/trivy:0.69.3 fs /root/'
             }
         }
 
@@ -26,10 +28,12 @@ pipeline {
                 echo "Analyzing code quality on ${env.SONAR_URL}..."
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                     sh """
-                    docker run --rm  --user root -v "${WORKSPACE}:/usr/src" sonarsource/sonar-scanner-cli \
+                    docker run --rm --user root \
+                        -v "$(pwd):/usr/src" \
+                        sonarsource/sonar-scanner-cli \
                         -Dsonar.projectKey=food-app \
                         -Dsonar.sources=. \
-                        -Dsonar.host.url=${SONAR_URL} \
+                        -Dsonar.host.url=${env.SONAR_URL} \
                         -Dsonar.login=${SONAR_TOKEN}
                     """
                 }
@@ -39,6 +43,7 @@ pipeline {
         stage('Build') {
             steps {
                 echo "Building Docker containers..."
+                // This builds your frontend and backend images defined in docker-compose.yml
                 sh 'docker compose build'
             }
         }
@@ -46,6 +51,7 @@ pipeline {
         stage('Deploy') {
             steps {
                 echo "Launching application..."
+                // Starts the app in detached mode (-d)
                 sh 'docker compose up -d'
             }
         }
@@ -77,7 +83,7 @@ Check SonarQube at: http://<YOUR-PUBLIC-IP>:9000
                  
 The Jenkins pipeline has FAILED. 
 
-Please check the error logs: ${env.BUILD_URL}console
+Please check the error logs here: ${env.BUILD_URL}console
 """
         }
     }
