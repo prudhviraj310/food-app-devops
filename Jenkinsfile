@@ -26,7 +26,7 @@ pipeline {
                 echo "Analyzing code quality on ${env.SONAR_URL}..."
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                     sh """
-                    docker run --rm -v .:/usr/src sonarsource/sonar-scanner-cli \
+                    docker run --rm  --user root -v "${WORKSPACE}:/usr/src" sonarsource/sonar-scanner-cli \
                         -Dsonar.projectKey=food-app \
                         -Dsonar.sources=. \
                         -Dsonar.host.url=${SONAR_URL} \
