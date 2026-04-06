@@ -1,7 +1,7 @@
 const mysql = require('mysql2');
 
 const db =  mysql.createConnection({
-  DB_HOST=food-app-db,
+host: 'food-app-db',
   user: 'root',
   password: 'Prudhviraj@310',
   database: 'fooddb'
