@@ -5,7 +5,7 @@ pipeline {
         SONAR_URL = "http://10.1.1.55:9000" 
         RECEIVER_EMAIL = "prudhviraj7675@gmail.com"
         DOCKER_USER = "prudhviraj310" 
-        // This IP MUST match the one you saved in your /home/ubuntu/.kube/config
+        // This IP matches your /home/ubuntu/.kube/config
         K8S_MASTER = "https://10.1.1.118:6443"
     }
 
@@ -19,6 +19,7 @@ pipeline {
         stage('Security Scan (Trivy)') {
             steps {
                 echo "Scanning for vulnerabilities..."
+                // Using \$(pwd) to ensure Jenkins captures the workspace path correctly
                 sh 'docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "\$(pwd):/root/" ghcr.io/aquasecurity/trivy:0.69.3 fs /root/'
             }
         }
@@ -62,7 +63,10 @@ pipeline {
             steps {
                 echo "Updating Kubernetes Cluster..."
                 sh """
-                # We use --server and --insecure-skip-tls-verify to ensure the container can talk to the host API
+                # CRITICAL FIX: Point kubectl to the mounted config file to avoid the 'EOF' prompt
+                export KUBECONFIG=/root/.kube/config
+                
+                # Apply the manifest and force a restart to pull the fresh image
                 kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true apply -f k8s/backend.yaml
                 kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true rollout restart deployment food-app-backend
                 """
