@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: prudhviraj310/food-app-frontend:latest
+        image: prudhviraj310/food-app-frontend:v1
         ports:
         - containerPort: 3000
 ---

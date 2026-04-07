@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: prudhviraj310/food-app-backend:latest
+        image: prudhviraj310/food-app-backend:v1
         ports:
         - containerPort: 8080
         env:
