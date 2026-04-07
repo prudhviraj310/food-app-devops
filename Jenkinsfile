@@ -5,7 +5,6 @@ pipeline {
         SONAR_URL = "http://10.1.1.55:9000" 
         RECEIVER_EMAIL = "prudhviraj7675@gmail.com"
         DOCKER_USER = "prudhviraj310" 
-        // This IP matches your /home/ubuntu/.kube/config
         K8S_MASTER = "https://10.1.1.118:6443"
     }
 
@@ -19,8 +18,7 @@ pipeline {
         stage('Security Scan (Trivy)') {
             steps {
                 echo "Scanning for vulnerabilities..."
-                // Using \$(pwd) to ensure Jenkins captures the workspace path correctly
-                sh 'docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "\$(pwd):/root/" ghcr.io/aquasecurity/trivy:0.69.3 fs /root/'
+                sh 'docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$(pwd):/root/" ghcr.io/aquasecurity/trivy:0.69.3 fs /root/'
             }
         }
 
@@ -46,13 +44,13 @@ pipeline {
                 echo "Building and Pushing Docker images..."
                 withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_ID')]) {
                     sh """
-                    # 1. Build the specific backend image
+                    # Build backend image
                     docker build -t ${DOCKER_USER}/food-app-backend:v1 ./backend
                     
-                    # 2. Login to Docker Hub
+                    # Login to Docker Hub
                     echo \$DOCKER_PASS | docker login -u \$DOCKER_ID --password-stdin
                     
-                    # 3. Push to Docker Hub
+                    # Push image
                     docker push ${DOCKER_USER}/food-app-backend:v1
                     """
                 }
@@ -63,10 +61,14 @@ pipeline {
             steps {
                 echo "Updating Kubernetes Cluster..."
                 sh """
-                # CRITICAL FIX: Point kubectl to the mounted config file to avoid the 'EOF' prompt
+                # Step 1: Force correct permissions on the mounted config
+                # This bypasses the 'Permission Denied' issue inside the pipeline environment
+                [ -f /root/.kube/config ] && chmod 644 /root/.kube/config
+                
+                # Step 2: Set the Kubeconfig path
                 export KUBECONFIG=/root/.kube/config
                 
-                # Apply the manifest and force a restart to pull the fresh image
+                # Step 3: Execute deployment
                 kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true apply -f k8s/backend.yaml
                 kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true rollout restart deployment food-app-backend
                 """
