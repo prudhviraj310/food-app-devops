@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # --- DATABASE SERVICE ---
   mysql:
     image: mysql:8
     container_name: food-app-db
@@ -13,10 +14,11 @@ services:
     volumes:
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       timeout: 20s
       retries: 10
 
+  # --- BACKEND SERVICE ---
   backend:
     build: ./backend
     container_name: food-app-backend
@@ -32,11 +34,31 @@ services:
       DB_PASSWORD: Prudhviraj@310
       DB_NAME: fooddb
 
+  # --- FRONTEND SERVICE ---
   frontend:
     build: ./frontend
     container_name: food-app-frontend
     restart: always
     ports:
-      - "3000:3000"  # Fixed port mapping to match your Dockerfile
+      - "3000:3000"
     depends_on:
       - backend
+
+  # --- JENKINS (CI/CD) SERVICE ---
+  jenkins:
+    image: jenkins/jenkins:lts
+    container_name: jenkins
+    user: root  # FIX: Runs as root so it always has permission to use docker.sock
+    restart: always
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock      # Mounts Host Docker into Jenkins
+      - /home/ubuntu/.kube/config:/root/.kube/config  # Mounts K8s Config into Jenkins
+    environment:
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false # Optional: skips initial setup if already done
+
+volumes:
+  jenkins_home:

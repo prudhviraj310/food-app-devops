@@ -16,3 +16,5 @@ db.connect(err => {
 });
 
 module.exports = db;
+
+console.log("HELLO! THE AUTOMATIC PIPELINE IS WORKING!");
