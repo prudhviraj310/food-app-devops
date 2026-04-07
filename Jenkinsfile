@@ -4,8 +4,9 @@ pipeline {
     environment {
         SONAR_URL = "http://10.1.1.55:9000" 
         RECEIVER_EMAIL = "prudhviraj7675@gmail.com"
-        // Replace with your Docker Hub Username
         DOCKER_USER = "prudhviraj310" 
+        // This IP MUST match the one you saved in your /home/ubuntu/.kube/config
+        K8S_MASTER = "https://10.1.1.118:6443"
     }
 
     stages {
@@ -42,8 +43,6 @@ pipeline {
         stage('Build & Push') {
             steps {
                 echo "Building and Pushing Docker images..."
-                // Use withCredentials to login to Docker Hub securely
-                // Make sure you have 'docker-hub-creds' setup in Jenkins (Username/Password)
                 withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_ID')]) {
                     sh """
                     # 1. Build the specific backend image
@@ -63,9 +62,9 @@ pipeline {
             steps {
                 echo "Updating Kubernetes Cluster..."
                 sh """
-                # Apply changes and force a rollout so K8s pulls the NEW v1 image
-                kubectl apply -f k8s/backend.yaml
-                kubectl rollout restart deployment food-app-backend
+                # We use --server and --insecure-skip-tls-verify to ensure the container can talk to the host API
+                kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true apply -f k8s/backend.yaml
+                kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true rollout restart deployment food-app-backend
                 """
             }
         }
@@ -76,7 +75,7 @@ pipeline {
             echo "Success! Sending email..."
             mail to: "${env.RECEIVER_EMAIL}",
                  subject: "BUILD SUCCESS: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
-                 body: "The Jenkins pipeline for 'food-app' finished successfully and deployed to K8s!"
+                 body: "The Jenkins pipeline for 'food-app' finished successfully and updated the cluster!"
         }
         failure {
             echo "Failure! Sending alert..."
