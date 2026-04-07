@@ -20,6 +20,11 @@ spec:
         env:
         - name: DB_HOST
           value: "food-app-db"
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-pass
+              key: password
 ---
 apiVersion: v1
 kind: Service
