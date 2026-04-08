@@ -2,6 +2,7 @@ pipeline {
     agent any
 
     environment {
+        // Infrastructure Details
         SONAR_URL = "http://10.1.1.55:9000" 
         RECEIVER_EMAIL = "prudhviraj7675@gmail.com"
         DOCKER_USER = "prudhviraj310" 
@@ -11,6 +12,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
+                // Pulls code from the GitHub repo you linked in the Job
                 checkout scm
             }
         }
@@ -18,6 +20,7 @@ pipeline {
         stage('Security Scan (Trivy)') {
             steps {
                 echo "Scanning for vulnerabilities..."
+                // Runs Trivy as a container to scan the current directory
                 sh 'docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$(pwd):/root/" ghcr.io/aquasecurity/trivy:0.69.3 fs /root/'
             }
         }
@@ -44,13 +47,11 @@ pipeline {
                 echo "Building and Pushing Docker images..."
                 withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_ID')]) {
                     sh """
-                    # Build backend image
+                    # Build the image using the DOCKER_USER variable
                     docker build -t ${DOCKER_USER}/food-app-backend:v1 ./backend
                     
-                    # Login to Docker Hub
+                    # Login and Push to Docker Hub
                     echo \$DOCKER_PASS | docker login -u \$DOCKER_ID --password-stdin
-                    
-                    # Push image
                     docker push ${DOCKER_USER}/food-app-backend:v1
                     """
                 }
@@ -61,15 +62,15 @@ pipeline {
             steps {
                 echo "Updating Kubernetes Cluster..."
                 sh """
-                # Step 1: Force correct permissions on the mounted config
-                # This bypasses the 'Permission Denied' issue inside the pipeline environment
-                [ -f /root/.kube/config ] && chmod 644 /root/.kube/config
+                # 1. Access the Kubeconfig we mounted in Docker Compose
+                # We use /var/jenkins_home/ because that is the path inside the container
+                [ -f /var/jenkins_home/.kube/config ] && chmod 644 /var/jenkins_home/.kube/config
+                export KUBECONFIG=/var/jenkins_home/.kube/config
                 
-                # Step 2: Set the Kubeconfig path
-                export KUBECONFIG=/root/.kube/config
-                
-                # Step 3: Execute deployment
+                # 2. Deploy to the K8s Master IP
                 kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true apply -f k8s/backend.yaml
+                
+                # 3. Force a restart to pull the new image
                 kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true rollout restart deployment food-app-backend
                 """
             }
@@ -79,15 +80,27 @@ pipeline {
     post {
         success {
             echo "Success! Sending email..."
-            mail to: "${env.RECEIVER_EMAIL}",
-                 subject: "BUILD SUCCESS: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
-                 body: "The Jenkins pipeline for 'food-app' finished successfully and updated the cluster!"
+            script {
+                try {
+                    mail to: "${env.RECEIVER_EMAIL}",
+                         subject: "BUILD SUCCESS: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
+                         body: "The Jenkins pipeline for 'food-app' finished successfully and updated the cluster!"
+                } catch (Exception e) {
+                    echo "Mail notification failed, but the deployment was successful!"
+                }
+            }
         }
         failure {
             echo "Failure! Sending alert..."
-            mail to: "${env.RECEIVER_EMAIL}",
-                 subject: "BUILD FAILED: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
-                 body: "The Jenkins pipeline has FAILED. Check logs: ${env.BUILD_URL}console"
+            script {
+                try {
+                    mail to: "${env.RECEIVER_EMAIL}",
+                         subject: "BUILD FAILED: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
+                         body: "The Jenkins pipeline has FAILED. Check logs: ${env.BUILD_URL}console"
+                } catch (Exception e) {
+                    echo "Mail notification failed. Check Jenkins logs manually."
+                }
+            }
         }
     }
 }
