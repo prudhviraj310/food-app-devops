@@ -45,20 +45,24 @@ services:
       - backend
 
   # --- JENKINS (CI/CD) SERVICE ---
+  # --- JENKINS (CI/CD) SERVICE ---
   jenkins:
     image: jenkins/jenkins:lts
     container_name: jenkins
-    user: root  # FIX: Runs as root so it always has permission to use docker.sock
+    user: root 
     restart: always
     ports:
       - "8080:8080"
       - "50000:50000"
     volumes:
       - jenkins_home:/var/jenkins_home
-      - /var/run/docker.sock:/var/run/docker.sock      # Mounts Host Docker into Jenkins
-      - /home/ubuntu/.kube/config:/var/jenkins_home/.kube/config  # Mounts K8s Config into Jenkins
+      - /var/run/docker.sock:/var/run/docker.sock
+      # FIX 1: Map the Docker binary so Jenkins can run "docker" commands
+      - /usr/bin/docker:/usr/bin/docker
+      # FIX 2: Map Kubectl so Jenkins can deploy to your cluster
+      - /usr/local/bin/kubectl:/usr/local/bin/kubectl
+      - /home/ubuntu/.kube/config:/var/jenkins_home/.kube/config
     environment:
-      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false # Optional: skips initial setup if already done
-
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
 volumes:
   jenkins_home:
