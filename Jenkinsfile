@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        // Infrastructure Details
-        SONAR_URL = "http://10.1.1.55:9000" 
+        // Updated with your new SonarQube IP
+        SONAR_URL = "http://13.201.51.53:9000" 
         RECEIVER_EMAIL = "prudhviraj7675@gmail.com"
         DOCKER_USER = "prudhviraj310" 
         K8S_MASTER = "https://10.1.1.118:6443"
@@ -12,28 +12,26 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                // Pulls code from the GitHub repo you linked in the Job
                 checkout scm
             }
         }
 
         stage('Security Scan (Trivy)') {
             steps {
-                echo "Scanning for vulnerabilities..."
-                // Runs Trivy as a container to scan the current directory
+                echo "Scanning entire project for vulnerabilities..."
                 sh 'docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$(pwd):/root/" ghcr.io/aquasecurity/trivy:0.69.3 fs /root/'
             }
         }
 
         stage('Static Analysis (SonarQube)') {
             steps {
-                echo "Analyzing code quality on ${env.SONAR_URL}..."
+                echo "Analyzing code quality..."
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                     sh """
                     docker run --rm --user root \
                         -v "\$(pwd):/usr/src" \
                         sonarsource/sonar-scanner-cli \
-                        -Dsonar.projectKey=food-app \
+                        -Dsonar.projectKey=food-app-fullstack \
                         -Dsonar.sources=. \
                         -Dsonar.host.url=${env.SONAR_URL} \
                         -Dsonar.login=${SONAR_TOKEN}
@@ -42,17 +40,21 @@ pipeline {
             }
         }
 
-        stage('Build & Push') {
+        stage('Build & Push Images') {
             steps {
-                echo "Building and Pushing Docker images..."
+                echo "Building Backend and Frontend images..."
                 withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_ID')]) {
                     sh """
-                    # Build the image using the DOCKER_USER variable
-                    docker build -t ${DOCKER_USER}/food-app-backend:v1 ./backend
-                    
-                    # Login and Push to Docker Hub
+                    # Login once
                     echo \$DOCKER_PASS | docker login -u \$DOCKER_ID --password-stdin
+
+                    # 1. Build and Push Backend
+                    docker build -t ${DOCKER_USER}/food-app-backend:v1 ./backend
                     docker push ${DOCKER_USER}/food-app-backend:v1
+
+                    # 2. Build and Push Frontend
+                    docker build -t ${DOCKER_USER}/food-app-frontend:v1 ./frontend
+                    docker push ${DOCKER_USER}/food-app-frontend:v1
                     """
                 }
             }
@@ -60,18 +62,21 @@ pipeline {
 
         stage('Deploy to Kubernetes') {
             steps {
-                echo "Updating Kubernetes Cluster..."
+                echo "Updating Database, Backend, and Frontend in Cluster..."
                 sh """
-                # 1. Access the Kubeconfig we mounted in Docker Compose
-                # We use /var/jenkins_home/ because that is the path inside the container
+                # Set permissions and path for Kubeconfig
                 [ -f /var/jenkins_home/.kube/config ] && chmod 644 /var/jenkins_home/.kube/config
                 export KUBECONFIG=/var/jenkins_home/.kube/config
                 
-                # 2. Deploy to the K8s Master IP
+                # Apply all YAML files (Database, Backend, Frontend)
+                # Assumes your files are named correctly in the k8s folder
+                kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true apply -f k8s/db.yaml
                 kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true apply -f k8s/backend.yaml
+                kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true apply -f k8s/frontend.yaml
                 
-                # 3. Force a restart to pull the new image
+                # Force restart for Backend and Frontend to use latest :v1 images
                 kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true rollout restart deployment food-app-backend
+                kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true rollout restart deployment food-app-frontend
                 """
             }
         }
@@ -79,26 +84,26 @@ pipeline {
     
     post {
         success {
-            echo "Success! Sending email..."
+            echo "Full Stack Deployment Successful!"
             script {
                 try {
                     mail to: "${env.RECEIVER_EMAIL}",
-                         subject: "BUILD SUCCESS: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
-                         body: "The Jenkins pipeline for 'food-app' finished successfully and updated the cluster!"
+                         subject: "FULL DEPLOY SUCCESS: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
+                         body: "Everything is live! Database, Backend, and Frontend have been updated."
                 } catch (Exception e) {
-                    echo "Mail notification failed, but the deployment was successful!"
+                    echo "Mail failed, but deployment worked."
                 }
             }
         }
         failure {
-            echo "Failure! Sending alert..."
+            echo "Pipeline Failed. Check logs."
             script {
                 try {
                     mail to: "${env.RECEIVER_EMAIL}",
-                         subject: "BUILD FAILED: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}",
-                         body: "The Jenkins pipeline has FAILED. Check logs: ${env.BUILD_URL}console"
+                         subject: "DEPLOY FAILED: ${env.JOB_NAME}",
+                         body: "Check the console output here: ${env.BUILD_URL}console"
                 } catch (Exception e) {
-                    echo "Mail notification failed. Check Jenkins logs manually."
+                    echo "Mail notification failed."
                 }
             }
         }
