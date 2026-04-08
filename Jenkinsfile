@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        // Updated with your new SonarQube IP
-        SONAR_URL = "http://13.201.51.53:9000" 
+        // Fix: Use Private IP for stable internal AWS communication
+        SONAR_URL = "http://10.1.1.55:9000" 
         RECEIVER_EMAIL = "prudhviraj7675@gmail.com"
         DOCKER_USER = "prudhviraj310" 
         K8S_MASTER = "https://10.1.1.118:6443"
@@ -19,7 +19,8 @@ pipeline {
         stage('Security Scan (Trivy)') {
             steps {
                 echo "Scanning entire project for vulnerabilities..."
-                sh 'docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$(pwd):/root/" ghcr.io/aquasecurity/trivy:0.69.3 fs /root/'
+                // --network host allows Trivy to download its vulnerability database faster
+                sh 'docker run --rm --network host -v /var/run/docker.sock:/var/run/docker.sock -v "${WORKSPACE}:/root/" ghcr.io/aquasecurity/trivy:0.69.3 fs /root/'
             }
         }
 
@@ -29,10 +30,11 @@ pipeline {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                     sh """
                     docker run --rm --user root \
-                        -v "\$(pwd):/usr/src" \
+                        --network host \
+                        -v "${WORKSPACE}:/usr/src" \
                         sonarsource/sonar-scanner-cli \
                         -Dsonar.projectKey=food-app-fullstack \
-                        -Dsonar.sources=. \
+                        -Dsonar.sources=/usr/src \
                         -Dsonar.host.url=${env.SONAR_URL} \
                         -Dsonar.login=${SONAR_TOKEN}
                     """
@@ -45,7 +47,7 @@ pipeline {
                 echo "Building Backend and Frontend images..."
                 withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_ID')]) {
                     sh """
-                    # Login once
+                    # Login to Docker Hub
                     echo \$DOCKER_PASS | docker login -u \$DOCKER_ID --password-stdin
 
                     # 1. Build and Push Backend
@@ -68,13 +70,12 @@ pipeline {
                 [ -f /var/jenkins_home/.kube/config ] && chmod 644 /var/jenkins_home/.kube/config
                 export KUBECONFIG=/var/jenkins_home/.kube/config
                 
-                # Apply all YAML files (Database, Backend, Frontend)
-                # Assumes your files are named correctly in the k8s folder
+                # Apply all YAML files from the k8s directory
                 kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true apply -f k8s/db.yaml
                 kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true apply -f k8s/backend.yaml
                 kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true apply -f k8s/frontend.yaml
                 
-                # Force restart for Backend and Frontend to use latest :v1 images
+                # Force rollout to ensure pods pull the new :v1 images
                 kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true rollout restart deployment food-app-backend
                 kubectl --server=${K8S_MASTER} --insecure-skip-tls-verify=true rollout restart deployment food-app-frontend
                 """
