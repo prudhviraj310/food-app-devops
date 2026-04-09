@@ -31,9 +31,11 @@ kind: Service
 metadata:
   name: food-app-backend
 spec:
+  type: NodePort  # Added this to make it accessible from Chrome
   selector:
     app: backend
   ports:
     - protocol: TCP
       port: 8080
       targetPort: 8080
+      nodePort: 30008 # Use this port in Chrome
